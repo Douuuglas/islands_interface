@@ -2,6 +2,7 @@ defmodule IslandsInterfaceWeb.GameChannel do
   use IslandsInterfaceWeb, :channel
 
   alias IslandsEngine.Game
+  alias IslandsInterface.Presence
 
   def channel() do
     quote do
@@ -11,16 +12,20 @@ defmodule IslandsInterfaceWeb.GameChannel do
     end
   end
 
-  def join("game:" <> _player, _payload, socket) do
+  def join("game:" <> _player, %{"screen_name" => screen_name}, socket) do
+    send(self(), {:after_join, screen_name})
     {:ok, socket}
   end
 
-  # def handle_in("hello", payload, socket) do
-  #   {:reply, {:ok, payload}, socket}
-  # end
+  def handle_info({:after_join, screen_name}, socket) do
+    {:ok, _} =
+      Presence.track(socket, screen_name, %{online_at: inspect(System.system_time(:second))})
 
-  def handle_in("hello", payload, socket) do
-    broadcast!(socket, "said_hello", payload)
+    {:noreply, socket}
+  end
+
+  def handle_in("show_subscribers", _payload, socket) do
+    broadcast!(socket, "subscribers", Presence.list(socket))
     {:noreply, socket}
   end
 
@@ -78,7 +83,7 @@ defmodule IslandsInterfaceWeb.GameChannel do
     coordinate = String.to_atom(coordinate)
 
     case Game.guess_coordinate({:global, socket.topic}, player, coordinate) do
-      {:hit, island,win} ->
+      {:hit, island, win} ->
         result = %{hit: true, island: island, win: win}
         broadcast!(socket, "player_guessed_coordinate", %{player: player, result: result})
         {:noreply, socket}
@@ -88,8 +93,8 @@ defmodule IslandsInterfaceWeb.GameChannel do
         broadcast!(socket, "player_guessed_coordinate", %{player: player, result: result})
         {:noreply, socket}
 
-      {:error, reason} -> {:reply, {:error, %{player: player, reason: reason}}, socket}
-
+      {:error, reason} ->
+        {:reply, {:error, %{player: player, reason: reason}}, socket}
     end
   end
 end
